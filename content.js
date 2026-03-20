@@ -2,7 +2,7 @@ let lastArticleCount = 0;
 let debounceTimer;
 
 function createNavigator() {
-    const articles = document.querySelectorAll('article');
+    const articles = document.querySelectorAll('section[data-testid^="conversation-turn-"]');
     if (articles.length === lastArticleCount && articles.length > 0) return;
     lastArticleCount = articles.length;
 

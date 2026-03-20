@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Navigator",
-  "version": "1.0.1",
-  "description": "Adds a sidebar minimap to ChatGPT for fast conversation navigation and smooth scrolling.",
+  "name": "ChatGPT Navigator – Minimap & Conversation Sidebar",
+  "version": "1.0.2",
+  "description": "Adds a minimap sidebar to ChatGPT to navigate long conversations quickly and jump to any message.",
 
   "icons": {
     "16": "icons/icon16.png",
