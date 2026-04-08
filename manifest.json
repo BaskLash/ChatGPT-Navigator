@@ -20,7 +20,12 @@
       "16": "icons/icon16.png",
       "24": "icons/icon24.png",
       "32": "icons/icon32.png"
-    }
+    },
+    "default_popup": "popup.html"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; style-src 'self' https://cdn.jsdelivr.net; object-src 'self'"
   },
 
   "content_scripts": [
