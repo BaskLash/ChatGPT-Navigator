@@ -127,7 +127,7 @@ function createNavigator() {
 
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = article.innerHTML;
-        tempDiv.querySelectorAll('h5, h6, button, svg').forEach(el => el.remove());
+        tempDiv.querySelectorAll('h4,h5, h6, button, svg').forEach(el => el.remove());
         const rawText = tempDiv.innerText.trim();
         const preview = rawText.substring(0, 80) + (rawText.length > 80 ? '\u2026' : '');
         const tooltipHTML = `<b style="color:${accentColor}">${senderLabel}:</b><br>${preview}`;
