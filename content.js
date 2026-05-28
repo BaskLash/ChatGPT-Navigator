@@ -9,6 +9,10 @@ let prevHoverIdx = -1;
 let isNavigating = false;
 let chatBars = [];
 
+// Survive ChatGPT virtualization: keep last-known preview text per turn
+// so we can still show it after the article gets unmounted.
+const previewCache = new Map();
+
 const PALETTE = {
     user: '#8b9eff',
     assistant: '#e5e7eb',
@@ -190,6 +194,11 @@ function ensureStyles() {
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+        #chat-nav-tooltip .cn-tip-body.cn-tip-empty {
+            color: rgba(255,255,255,0.45);
+            font-style: italic;
+            font-size: 12.5px;
+        }
         @media (prefers-reduced-motion: reduce) {
             .cn-bar, .cn-arrow, #chat-nav-tooltip { transition: none !important; }
         }
@@ -307,14 +316,13 @@ function createNavigator() {
     });
 
     articles.forEach((article, index) => {
-        const isUser = !!article.querySelector('img[alt="User"], .user-avatar, [data-testid="user-message"]') || (index % 2 === 0);
+        const testid = article.getAttribute('data-testid');
+        const isUser = detectIsUser(article, index);
         const senderLabel = isUser ? 'You' : 'ChatGPT';
 
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = article.innerHTML;
-        tempDiv.querySelectorAll('h4,h5,h6,button,svg').forEach(el => el.remove());
-        const rawText = tempDiv.innerText.trim().replace(/\s+/g, ' ');
-        const preview = rawText.substring(0, 140) + (rawText.length > 140 ? '…' : '');
+        // Seed the cache if the article is already rendered; otherwise we
+        // will extract on first hover.
+        extractPreview(article, testid);
 
         const row = document.createElement('div');
         row.className = 'cn-bar-row';
@@ -326,10 +334,12 @@ function createNavigator() {
         line.className = 'cn-bar' + (isUser ? ' cn-bar--user' : '');
         row.appendChild(line);
 
+        const showTip = () => showTooltipFor(line, index);
+
         row.addEventListener('mouseenter', () => {
             hoveredIndex = index;
             applyHighlights();
-            showTooltipFor(line, senderLabel, preview);
+            showTip();
         });
 
         row.addEventListener('mouseleave', () => {
@@ -341,7 +351,7 @@ function createNavigator() {
         row.addEventListener('focus', () => {
             hoveredIndex = index;
             applyHighlights();
-            showTooltipFor(line, senderLabel, preview);
+            showTip();
         });
         row.addEventListener('blur', () => {
             hoveredIndex = -1;
@@ -361,7 +371,7 @@ function createNavigator() {
         });
 
         barsContainer.appendChild(row);
-        chatBars.push({ line, row, article, isUser });
+        chatBars.push({ line, row, article, testid, isUser, senderLabel });
     });
 
     shell.appendChild(toggle);
@@ -375,12 +385,50 @@ function createNavigator() {
     updateArrowStates();
 }
 
+// ── Sender / preview extraction ───────────────────────────────────────────────
+
+function detectIsUser(node, index) {
+    if (node) {
+        if (node.querySelector('[data-message-author-role="user"]')) return true;
+        if (node.querySelector('[data-message-author-role="assistant"]')) return false;
+        if (node.querySelector('img[alt="User"], .user-avatar, [data-testid="user-message"]')) return true;
+    }
+    return index % 2 === 0;
+}
+
+function extractPreview(node, testid) {
+    if (!node || !node.isConnected) return previewCache.get(testid) || '';
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = node.innerHTML;
+    tempDiv.querySelectorAll('h4,h5,h6,button,svg').forEach(el => el.remove());
+    const raw = tempDiv.innerText.trim().replace(/\s+/g, ' ');
+    if (!raw) return previewCache.get(testid) || '';
+    const preview = raw.substring(0, 140) + (raw.length > 140 ? '…' : '');
+    if (testid) previewCache.set(testid, preview);
+    return preview;
+}
+
 // ── Tooltip helpers ───────────────────────────────────────────────────────────
 
-function showTooltipFor(line, label, preview) {
+function showTooltipFor(line, index) {
+    const entry = chatBars[index];
+    if (!entry) return;
+
+    // Re-query the live node — the captured one may be detached after
+    // ChatGPT virtualized it out of view. Then pull a fresh preview.
+    let node = entry.article;
+    if ((!node || !node.isConnected) && entry.testid) {
+        node = document.querySelector(`section[data-testid="${entry.testid}"]`);
+        if (node) entry.article = node;
+    }
+
+    const preview = extractPreview(node, entry.testid);
+
     const tip = ensureTooltip();
-    tip.querySelector('.cn-tip-label').textContent = label;
-    tip.querySelector('.cn-tip-body').textContent = preview;
+    tip.querySelector('.cn-tip-label').textContent = entry.senderLabel;
+    const body = tip.querySelector('.cn-tip-body');
+    body.textContent = preview || 'Message not loaded yet — click to jump';
+    body.classList.toggle('cn-tip-empty', !preview);
 
     const rect = line.getBoundingClientRect();
     tip.style.top = (rect.top + rect.height / 2) + 'px';
@@ -447,20 +495,43 @@ function navigateTo(index) {
 
     clearTimeout(navLockTimer);
     clearTimeout(scrollUpdateTimer);
+    clearTimeout(debounceTimer);
     isNavigating = true;
-    navLockTimer = setTimeout(() => { isNavigating = false; }, 900);
+    navLockTimer = setTimeout(() => { isNavigating = false; }, 1200);
 
     activeIndex = index;
     applyHighlights();
     updateArrowStates();
 
     chatBars[index].row.scrollIntoView({ block: 'nearest' });
-    scrollToArticle(chatBars[index].article);
+
+    // ChatGPT virtualizes long conversations: the captured article node may
+    // be detached. Re-query by stable data-testid before scrolling, otherwise
+    // getBoundingClientRect() returns zeros and we'd jump to the top instead.
+    const entry = chatBars[index];
+    let article = entry.article;
+    if (!document.contains(article) && entry.testid) {
+        const fresh = document.querySelector(`section[data-testid="${entry.testid}"]`);
+        if (fresh) {
+            entry.article = fresh;
+            article = fresh;
+        }
+    }
+
+    scrollToArticle(article);
 }
 
 function scrollToArticle(article) {
     const headerHeight = document.querySelector('header')?.offsetHeight || 60;
     const padding = 8;
+    const rect = article.getBoundingClientRect();
+
+    // Detached / unmounted node — fall back to the browser's built-in
+    // scrollIntoView, which walks the ancestor chain itself.
+    if (rect.width === 0 && rect.height === 0 && rect.top === 0) {
+        article.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
 
     let container = article.parentElement;
     while (container && container !== document.body && container !== document.documentElement) {
@@ -470,14 +541,14 @@ function scrollToArticle(article) {
     }
 
     if (!container || container === document.body || container === document.documentElement) {
-        const top = article.getBoundingClientRect().top + window.scrollY - headerHeight - padding;
+        const top = rect.top + window.scrollY - headerHeight - padding;
         window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
         return;
     }
 
     const targetScrollTop =
         container.scrollTop +
-        article.getBoundingClientRect().top -
+        rect.top -
         container.getBoundingClientRect().top -
         headerHeight - padding;
 
@@ -518,9 +589,20 @@ function updateActiveByViewport() {
 
 // ── MutationObserver & startup ────────────────────────────────────────────────
 
+function scheduleRebuild() {
+    // Never tear down the minimap while the user is mid-navigation —
+    // it destroys the bar they just clicked and stalls the smooth scroll.
+    if (isNavigating) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(scheduleRebuild, 250);
+        return;
+    }
+    createNavigator();
+}
+
 const observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(createNavigator, 800);
+    debounceTimer = setTimeout(scheduleRebuild, 800);
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
