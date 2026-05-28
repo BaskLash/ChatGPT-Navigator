@@ -361,7 +361,7 @@ function createNavigator() {
         });
 
         barsContainer.appendChild(row);
-        chatBars.push({ line, row, article, isUser });
+        chatBars.push({ line, row, article, testid: article.getAttribute('data-testid'), isUser });
     });
 
     shell.appendChild(toggle);
@@ -447,20 +447,43 @@ function navigateTo(index) {
 
     clearTimeout(navLockTimer);
     clearTimeout(scrollUpdateTimer);
+    clearTimeout(debounceTimer);
     isNavigating = true;
-    navLockTimer = setTimeout(() => { isNavigating = false; }, 900);
+    navLockTimer = setTimeout(() => { isNavigating = false; }, 1200);
 
     activeIndex = index;
     applyHighlights();
     updateArrowStates();
 
     chatBars[index].row.scrollIntoView({ block: 'nearest' });
-    scrollToArticle(chatBars[index].article);
+
+    // ChatGPT virtualizes long conversations: the captured article node may
+    // be detached. Re-query by stable data-testid before scrolling, otherwise
+    // getBoundingClientRect() returns zeros and we'd jump to the top instead.
+    const entry = chatBars[index];
+    let article = entry.article;
+    if (!document.contains(article) && entry.testid) {
+        const fresh = document.querySelector(`section[data-testid="${entry.testid}"]`);
+        if (fresh) {
+            entry.article = fresh;
+            article = fresh;
+        }
+    }
+
+    scrollToArticle(article);
 }
 
 function scrollToArticle(article) {
     const headerHeight = document.querySelector('header')?.offsetHeight || 60;
     const padding = 8;
+    const rect = article.getBoundingClientRect();
+
+    // Detached / unmounted node — fall back to the browser's built-in
+    // scrollIntoView, which walks the ancestor chain itself.
+    if (rect.width === 0 && rect.height === 0 && rect.top === 0) {
+        article.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
 
     let container = article.parentElement;
     while (container && container !== document.body && container !== document.documentElement) {
@@ -470,14 +493,14 @@ function scrollToArticle(article) {
     }
 
     if (!container || container === document.body || container === document.documentElement) {
-        const top = article.getBoundingClientRect().top + window.scrollY - headerHeight - padding;
+        const top = rect.top + window.scrollY - headerHeight - padding;
         window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
         return;
     }
 
     const targetScrollTop =
         container.scrollTop +
-        article.getBoundingClientRect().top -
+        rect.top -
         container.getBoundingClientRect().top -
         headerHeight - padding;
 
@@ -518,9 +541,20 @@ function updateActiveByViewport() {
 
 // ── MutationObserver & startup ────────────────────────────────────────────────
 
+function scheduleRebuild() {
+    // Never tear down the minimap while the user is mid-navigation —
+    // it destroys the bar they just clicked and stalls the smooth scroll.
+    if (isNavigating) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(scheduleRebuild, 250);
+        return;
+    }
+    createNavigator();
+}
+
 const observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(createNavigator, 800);
+    debounceTimer = setTimeout(scheduleRebuild, 800);
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
