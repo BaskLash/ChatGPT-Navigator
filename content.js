@@ -54,7 +54,7 @@ function ensureStyles() {
         .cn-bars {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 0;
             overflow-y: auto;
             padding: 4px 2px;
             scrollbar-width: thin;
@@ -70,12 +70,23 @@ function ensureStyles() {
         }
         .cn-bars::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 
+        /* Full-width hitbox row — eliminates dead zones between bars so
+           hover never flickers off while moving the mouse vertically. */
+        .cn-bar-row {
+            width: 100%;
+            padding: 2.5px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
         .cn-bar {
             width: 22px;
             height: 6px;
             background: ${PALETTE.bar};
             border-radius: 999px;
-            cursor: pointer;
+            pointer-events: none;
             flex-shrink: 0;
             transition: width 0.18s cubic-bezier(.2,.8,.2,1),
                         background-color 0.18s ease,
@@ -305,48 +316,52 @@ function createNavigator() {
         const rawText = tempDiv.innerText.trim().replace(/\s+/g, ' ');
         const preview = rawText.substring(0, 140) + (rawText.length > 140 ? '…' : '');
 
+        const row = document.createElement('div');
+        row.className = 'cn-bar-row';
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', `Jump to ${senderLabel} message ${index + 1}`);
+        row.tabIndex = 0;
+
         const line = document.createElement('div');
         line.className = 'cn-bar' + (isUser ? ' cn-bar--user' : '');
-        line.setAttribute('role', 'button');
-        line.setAttribute('aria-label', `Jump to ${senderLabel} message ${index + 1}`);
-        line.tabIndex = 0;
+        row.appendChild(line);
 
-        line.addEventListener('mouseenter', () => {
+        row.addEventListener('mouseenter', () => {
             hoveredIndex = index;
             applyHighlights();
             showTooltipFor(line, senderLabel, preview);
         });
 
-        line.addEventListener('mouseleave', () => {
+        row.addEventListener('mouseleave', () => {
             hoveredIndex = -1;
             applyHighlights();
             hideTooltip();
         });
 
-        line.addEventListener('focus', () => {
+        row.addEventListener('focus', () => {
             hoveredIndex = index;
             applyHighlights();
             showTooltipFor(line, senderLabel, preview);
         });
-        line.addEventListener('blur', () => {
+        row.addEventListener('blur', () => {
             hoveredIndex = -1;
             applyHighlights();
             hideTooltip();
         });
 
-        line.addEventListener('click', () => {
+        row.addEventListener('click', () => {
             hideTooltip();
             navigateTo(index);
         });
-        line.addEventListener('keydown', (e) => {
+        row.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 navigateTo(index);
             }
         });
 
-        barsContainer.appendChild(line);
-        chatBars.push({ line, article, isUser });
+        barsContainer.appendChild(row);
+        chatBars.push({ line, row, article, isUser });
     });
 
     shell.appendChild(toggle);
@@ -439,7 +454,7 @@ function navigateTo(index) {
     applyHighlights();
     updateArrowStates();
 
-    chatBars[index].line.scrollIntoView({ block: 'nearest' });
+    chatBars[index].row.scrollIntoView({ block: 'nearest' });
     scrollToArticle(chatBars[index].article);
 }
 
@@ -498,7 +513,7 @@ function updateActiveByViewport() {
     activeIndex = newIdx;
     applyHighlights();
     updateArrowStates();
-    chatBars[newIdx].line.scrollIntoView({ block: 'nearest' });
+    chatBars[newIdx].row.scrollIntoView({ block: 'nearest' });
 }
 
 // ── MutationObserver & startup ────────────────────────────────────────────────
