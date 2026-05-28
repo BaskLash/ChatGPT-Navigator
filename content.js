@@ -4,7 +4,8 @@ let scrollUpdateTimer = null;
 let navLockTimer = null;
 let activeIndex = -1;
 let hoveredIndex = -1;
-let prevDisplayIdx = -1;
+let prevActiveIdx = -1;
+let prevHoverIdx = -1;
 let isNavigating = false;
 let chatBars = [];
 
@@ -81,10 +82,13 @@ function ensureStyles() {
                         box-shadow 0.18s ease,
                         transform 0.18s ease;
         }
-        .cn-bar:hover {
+        /* Hover preview — distinct from the persistent active marker */
+        .cn-bar.cn-bar--hover {
             background: ${PALETTE.barHover};
-            width: 30px;
+            width: 28px;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.18);
         }
+        /* Active = current viewport section. Always wins visually. */
         .cn-bar.cn-bar--active {
             background: ${PALETTE.active};
             width: 34px;
@@ -93,7 +97,7 @@ function ensureStyles() {
         .cn-bar.cn-bar--user {
             background: linear-gradient(90deg, ${PALETTE.user}, rgba(139,158,255,0.55));
         }
-        .cn-bar.cn-bar--user:hover { filter: brightness(1.15); }
+        .cn-bar.cn-bar--user.cn-bar--hover { filter: brightness(1.2); }
         .cn-bar.cn-bar--user.cn-bar--active {
             background: ${PALETTE.user};
             box-shadow: 0 0 14px rgba(139,158,255,0.55);
@@ -236,7 +240,8 @@ function createNavigator() {
     chatBars = [];
     activeIndex = -1;
     hoveredIndex = -1;
-    prevDisplayIdx = -1;
+    prevActiveIdx = -1;
+    prevHoverIdx = -1;
 
     const tip = ensureTooltip();
     tip.classList.remove('cn-visible');
@@ -395,18 +400,29 @@ function makeArrowBtn(svg, id, label) {
 }
 
 // ── O(1) highlight ───────────────────────────────────────────────────────────
+// Active (current viewport section) and hover (mouse target) are independent.
+// The active marker never gets clobbered by hovering over a different bar.
 
 function applyHighlights() {
-    const displayIdx = hoveredIndex !== -1 ? hoveredIndex : activeIndex;
-    if (displayIdx === prevDisplayIdx) return;
+    if (activeIndex !== prevActiveIdx) {
+        if (prevActiveIdx >= 0 && prevActiveIdx < chatBars.length) {
+            chatBars[prevActiveIdx].line.classList.remove('cn-bar--active');
+        }
+        if (activeIndex >= 0 && activeIndex < chatBars.length) {
+            chatBars[activeIndex].line.classList.add('cn-bar--active');
+        }
+        prevActiveIdx = activeIndex;
+    }
 
-    if (prevDisplayIdx >= 0 && prevDisplayIdx < chatBars.length) {
-        chatBars[prevDisplayIdx].line.classList.remove('cn-bar--active');
+    if (hoveredIndex !== prevHoverIdx) {
+        if (prevHoverIdx >= 0 && prevHoverIdx < chatBars.length) {
+            chatBars[prevHoverIdx].line.classList.remove('cn-bar--hover');
+        }
+        if (hoveredIndex >= 0 && hoveredIndex < chatBars.length && hoveredIndex !== activeIndex) {
+            chatBars[hoveredIndex].line.classList.add('cn-bar--hover');
+        }
+        prevHoverIdx = hoveredIndex;
     }
-    if (displayIdx >= 0 && displayIdx < chatBars.length) {
-        chatBars[displayIdx].line.classList.add('cn-bar--active');
-    }
-    prevDisplayIdx = displayIdx;
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
